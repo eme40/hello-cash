@@ -2,6 +2,7 @@ package com.wallet.hello_cash_wallet.entities;
 
 import com.wallet.hello_cash_wallet.enums.TransactionStatus;
 import com.wallet.hello_cash_wallet.enums.TransactionType;
+import com.wallet.hello_cash_wallet.enums.TransferType;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -24,4 +25,6 @@ public class Transaction extends BaseClass {
   @ManyToOne(fetch = FetchType.LAZY)
   @JoinColumn(name = "account_id")
   private Wallet virtualAccountNumber;
+  @Enumerated(EnumType.STRING)
+  private TransferType transferType;
 }

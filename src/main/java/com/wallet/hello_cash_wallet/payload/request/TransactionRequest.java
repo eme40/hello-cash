@@ -3,6 +3,7 @@ package com.wallet.hello_cash_wallet.payload.request;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.wallet.hello_cash_wallet.enums.TransactionType;
+import com.wallet.hello_cash_wallet.enums.TransferType;
 import lombok.*;
 
 import java.math.BigDecimal;
@@ -21,4 +22,5 @@ public class TransactionRequest {
   private BigDecimal amount;
   private TransactionType transactionType;
   private String pin;
+  private TransferType transferType;
 }

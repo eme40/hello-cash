@@ -1,12 +1,11 @@
 package com.wallet.hello_cash_wallet.service.impl;
 
 import com.wallet.hello_cash_wallet.entities.Transaction;
-import com.wallet.hello_cash_wallet.entities.UserEntity;
 import com.wallet.hello_cash_wallet.entities.Wallet;
 import com.wallet.hello_cash_wallet.enums.TransactionStatus;
 import com.wallet.hello_cash_wallet.enums.TransactionType;
+import com.wallet.hello_cash_wallet.enums.TransferType;
 import com.wallet.hello_cash_wallet.exception.AccountNotFoundException;
-import com.wallet.hello_cash_wallet.exception.UserIdNotFoundException;
 import com.wallet.hello_cash_wallet.payload.request.TransactionRequest;
 import com.wallet.hello_cash_wallet.payload.response.TransactionsResponse;
 import com.wallet.hello_cash_wallet.repository.TransactionRepository;
@@ -15,7 +14,6 @@ import com.wallet.hello_cash_wallet.repository.WalletRepository;
 import com.wallet.hello_cash_wallet.service.TransactionService;
 import jakarta.transaction.Transactional;
 import lombok.AllArgsConstructor;
-import lombok.NoArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -87,29 +85,33 @@ public class TransactionServiceImpl implements TransactionService {
 
   private TransactionsResponse handleTransfer(TransactionRequest request) {
     Wallet sourceWallet = walletRepository.findByVirtualAccountNumber(request.getVirtualAccountNumber());
-    Wallet destinationWallet = walletRepository.findByVirtualAccountNumber(request.getDestinationAccount());
+    if (request.getTransferType().equals(TransferType.HELLOCASH)){
+      Wallet destinationWallet = walletRepository.findByVirtualAccountNumber(request.getDestinationAccount());
+      if (destinationWallet == null) {
+        throw new AccountNotFoundException("Destination account not found");
+      }
+      if (request.getAmount().compareTo(sourceWallet.getBalance()) > 0) {
+        return TransactionsResponse.builder()
+                .StatusCode(200)
+                .message("Insufficient balance")
+                .build();
+      }
 
-    if (destinationWallet == null) {
-      throw new AccountNotFoundException("Destination account not found");
+      // Deduct from source account
+      sourceWallet.setBalance(sourceWallet.getBalance().subtract(request.getAmount()));
+      walletRepository.save(sourceWallet);
+      saveTransaction(sourceWallet, request.getAmount(), TransactionType.DEBIT, TransactionStatus.SUCCESS);
+
+      // Add to destination account
+      destinationWallet.setBalance(destinationWallet.getBalance().add(request.getAmount()));
+      walletRepository.save(destinationWallet);
+      saveTransaction(destinationWallet, request.getAmount(), TransactionType.CREDIT, TransactionStatus.SUCCESS);
+
+    }else {
+      // Handle other types of transactions (e.g., HELLO_CASH)
+      // This section might include different logic based on the transfer type
+
     }
-
-    if (request.getAmount().compareTo(sourceWallet.getBalance()) > 0) {
-      return TransactionsResponse.builder()
-              .StatusCode(200)
-              .message("Insufficient balance")
-              .build();
-    }
-
-    // Deduct from source account
-    sourceWallet.setBalance(sourceWallet.getBalance().subtract(request.getAmount()));
-    walletRepository.save(sourceWallet);
-    saveTransaction(sourceWallet, request.getAmount(), TransactionType.DEBIT, TransactionStatus.SUCCESS);
-
-    // Add to destination account
-    destinationWallet.setBalance(destinationWallet.getBalance().add(request.getAmount()));
-    walletRepository.save(destinationWallet);
-    saveTransaction(destinationWallet, request.getAmount(), TransactionType.CREDIT, TransactionStatus.SUCCESS);
-
     return TransactionsResponse.builder()
             .StatusCode(200)
             .message("Transfer successful")
