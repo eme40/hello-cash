@@ -11,9 +11,11 @@ import com.wallet.hello_cash_wallet.payload.request.TransactionRequest;
 import com.wallet.hello_cash_wallet.payload.response.AccountInfo;
 import com.wallet.hello_cash_wallet.payload.response.RegistrationResponse;
 import com.wallet.hello_cash_wallet.payload.response.TransactionsResponse;
+import com.wallet.hello_cash_wallet.service.PayStackService;
 import com.wallet.hello_cash_wallet.service.TransactionService;
 import com.wallet.hello_cash_wallet.service.UserEntityService;
 import com.wallet.hello_cash_wallet.service.WalletService;
+import com.wallet.hello_cash_wallet.service.impl.BankService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -26,10 +28,10 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Component
-//@AllArgsConstructor
 @RequiredArgsConstructor
 @Slf4j
 public class WebSocketHandler extends TextWebSocketHandler {
@@ -37,15 +39,15 @@ public class WebSocketHandler extends TextWebSocketHandler {
   private final TransactionService transactionService;
   private final UserEntityService userEntityService;
   private final WalletService walletService;
+  private final PayStackService payStackService;
+  private final BankService bankService;
+  private final ObjectMapper objectMapper;
 
-  // Maps to keep track of registration and transaction state for each session
   private final Map<String, RegistrationRequest> registrationRequests = new HashMap<>();
   private final Map<String, Integer> registrationSteps = new HashMap<>();
 
   private final Map<String, TransactionRequest> transactionRequests = new HashMap<>();
   private final Map<String, Integer> transactionSteps = new HashMap<>();
-
-  private final ObjectMapper objectMapper;
 
   @Override
   public void afterConnectionEstablished(WebSocketSession session) throws Exception {
@@ -57,43 +59,80 @@ public class WebSocketHandler extends TextWebSocketHandler {
     String payload = message.getPayload().trim();
     String sessionId = session.getId();
 
-    if ("1".equals(payload)) {
-      registrationRequests.put(sessionId, new RegistrationRequest());
-      registrationSteps.put(sessionId, 1);
-      session.sendMessage(new TextMessage("Please enter your full name:"));
-    } else if ("2".equals(payload)) {
-      transactionRequests.put(sessionId, new TransactionRequest());
-      transactionSteps.put(sessionId, 1);
-      session.sendMessage(new TextMessage("Please enter your action (credit, debit, transfer):"));
-    } else {
-      processSteps(session, payload, sessionId);
+    switch (payload) {
+      case "1":
+        startRegistration(session, sessionId);
+        break;
+      case "2":
+        startTransaction(session, sessionId, TransactionType.TRANSFER);
+        session.sendMessage(new TextMessage("Do you want to transfer to (A) HelloCash user or (B) Other bank? Please enter A or B:"));
+        break;
+      case "3":
+        startTransaction(session, sessionId, TransactionType.BUY_CARD);
+        session.sendMessage(new TextMessage("Please enter the phone number to buy airtime for:"));
+        break;
+      case "4":
+        startTransaction(session, sessionId, TransactionType.BUY_DATA);
+        session.sendMessage(new TextMessage("Please enter the phone number to buy data for:"));
+        break;
+      default:
+        processSteps(session, payload, sessionId);
     }
   }
 
   private void sendMenuInstructions(WebSocketSession session) throws IOException {
     String instructions = "Welcome! Please select an option:\n" +
             "1. Register\n" +
-            "2. Perform a transaction\n" +
-            "Send the option number (1 or 2) to proceed.";
+            "2. Transfer\n" +
+            "3. Buy Airtime\n" +
+            "4. Buy Data\n" +
+            "Send the option number (1, 2, 3, or 4) to proceed.";
     session.sendMessage(new TextMessage(instructions));
+  }
+
+  private void startRegistration(WebSocketSession session, String sessionId) throws IOException {
+    registrationRequests.put(sessionId, new RegistrationRequest());
+    registrationSteps.put(sessionId, 1);
+    session.sendMessage(new TextMessage("Please enter your full name:"));
+  }
+
+  private void startTransaction(WebSocketSession session, String sessionId, TransactionType transactionType) throws IOException {
+    transactionRequests.put(sessionId, new TransactionRequest());
+    transactionRequests.get(sessionId).setTransactionType(transactionType);
+    transactionSteps.put(sessionId, 1);
   }
 
   private void processSteps(WebSocketSession session, String payload, String sessionId) throws IOException {
     if (registrationRequests.containsKey(sessionId)) {
       processRegistrationSteps(session, payload, sessionId);
     } else if (transactionRequests.containsKey(sessionId)) {
-      processTransactionSteps(session, payload, sessionId);
+      TransactionRequest request = transactionRequests.get(sessionId);
+      TransactionType transactionType = request.getTransactionType();
+
+      if (transactionType == null) {
+        session.sendMessage(new TextMessage("Invalid session. Please start over by selecting an option."));
+        return;
+      }
+
+      switch (transactionType) {
+        case TRANSFER:
+          processTransferSteps(session, payload, sessionId);
+          break;
+        case BUY_CARD:
+          processBuyAirtimeSteps(session, payload, sessionId);
+          break;
+        case BUY_DATA:
+          processBuyDataSteps(session, payload, sessionId);
+          break;
+        default:
+          session.sendMessage(new TextMessage("Invalid session. Please start over by selecting an option."));
+      }
     } else {
       session.sendMessage(new TextMessage("Invalid session. Please start over by selecting an option."));
     }
   }
 
   private void processRegistrationSteps(WebSocketSession session, String payload, String sessionId) throws IOException {
-    if (!registrationRequests.containsKey(sessionId)) {
-      session.sendMessage(new TextMessage("Invalid session. Please start over by selecting an option."));
-      return;
-    }
-
     RegistrationRequest request = registrationRequests.get(sessionId);
     int step = registrationSteps.getOrDefault(sessionId, 1);
 
@@ -140,110 +179,157 @@ public class WebSocketHandler extends TextWebSocketHandler {
     }
   }
 
-  private void processTransactionSteps(WebSocketSession session, String payload, String sessionId) throws IOException {
+  private void processTransferSteps(WebSocketSession session, String payload, String sessionId) throws IOException {
     TransactionRequest request = transactionRequests.get(sessionId);
     int step = transactionSteps.getOrDefault(sessionId, 1);
 
     try {
       switch (step) {
         case 1:
-          if ("credit".equalsIgnoreCase(payload)) {
-            request.setTransactionType(TransactionType.CREDIT);
-            session.sendMessage(new TextMessage("Please enter the account number to credit:"));
+          if ("A".equalsIgnoreCase(payload)) {
+            request.setTransferType(TransferType.HELLOCASH);
+            session.sendMessage(new TextMessage("Please enter the source account to be debited:"));
             transactionSteps.put(sessionId, 2);
-          } else if ("debit".equalsIgnoreCase(payload)) {
-            request.setTransactionType(TransactionType.DEBIT);
-            session.sendMessage(new TextMessage("Please enter the account number to debit:"));
-            transactionSteps.put(sessionId, 2);
-          } else if ("transfer".equalsIgnoreCase(payload)) {
-            request.setTransactionType(TransactionType.TRANSFER);
-            session.sendMessage(new TextMessage("Do you want to transfer to (A) HelloCash user or (B) Other bank? Please enter A or B:"));
+          } else if ("B".equalsIgnoreCase(payload)) {
+            request.setTransferType(TransferType.OTHERS);
+            session.sendMessage(new TextMessage("Please enter the source account to be debited:"));
             transactionSteps.put(sessionId, 2);
           } else {
-            session.sendMessage(new TextMessage("Invalid transaction type. Please enter credit, debit, or transfer:"));
+            session.sendMessage(new TextMessage("Invalid choice. Please enter A or B:"));
           }
           break;
         case 2:
-          if (request.getTransactionType() == TransactionType.TRANSFER) {
-            if ("A".equalsIgnoreCase(payload)) {
-              request.setTransferType(TransferType.HELLOCASH);
-              session.sendMessage(new TextMessage("Please enter the source account to be debited:"));
-              transactionSteps.put(sessionId, 3);
-            } else if ("B".equalsIgnoreCase(payload)) {
-              request.setTransferType(TransferType.OTHERS);
-              session.sendMessage(new TextMessage("Please enter the source account to be debited:"));
-              transactionSteps.put(sessionId, 3);
-            } else {
-              session.sendMessage(new TextMessage("Invalid choice. Please enter A or B:"));
-            }
-          } else {
-            request.setVirtualAccountNumber(payload);
-            session.sendMessage(new TextMessage("Please enter the amount:"));
-            transactionSteps.put(sessionId, 3);
-          }
+          request.setVirtualAccountNumber(payload);
+          session.sendMessage(new TextMessage("Please enter the destination account number:"));
+          transactionSteps.put(sessionId, 3);
           break;
         case 3:
-          if (request.getTransactionType() == TransactionType.TRANSFER) {
-            request.setVirtualAccountNumber(payload);
-            if (request.getTransferType() == TransferType.HELLOCASH) {
-              session.sendMessage(new TextMessage("Please enter the destination HelloCash account number:"));
-              transactionSteps.put(sessionId, 4);
-            } else if (request.getTransferType() == TransferType.OTHERS) {
-              session.sendMessage(new TextMessage("Please enter the destination bank name:"));
-              transactionSteps.put(sessionId, 4);
-            }
-          } else {
-            request.setAmount(new BigDecimal(payload));
-            session.sendMessage(new TextMessage("Please enter your PIN:"));
+          request.setDestinationAccount(payload);
+          if (request.getTransferType() == TransferType.OTHERS) {
+            List<String> bankNames = bankService.getBankNames();
+            String bankListMessage = "Please enter the destination bank name:\n" + String.join(",\n ", bankNames);
+            session.sendMessage(new TextMessage(bankListMessage));
             transactionSteps.put(sessionId, 4);
+          } else {
+            AccountInfo accountInfo = walletService.nameEnquiry(payload);
+            request.setDestinationAccountName(accountInfo.getAccountName());
+            session.sendMessage(new TextMessage("Destination Account Name: " + accountInfo.getAccountName() + "\nPlease enter the amount:"));
+            transactionSteps.put(sessionId, 5);
           }
           break;
         case 4:
-          if (request.getTransactionType() == TransactionType.TRANSFER) {
-            if (request.getTransferType() == TransferType.HELLOCASH) {
-              request.setDestinationAccount(payload);
-              AccountInfo nameEnquiryResponse = walletService.nameEnquiry(request.getDestinationAccount());
-              session.sendMessage(new TextMessage("Account Name: " + nameEnquiryResponse.getAccountName()));
-              session.sendMessage(new TextMessage("Please enter the amount:"));
+          String bankName = payload.trim();
+          if (bankService.isValidBankName(bankName)) {
+            String bankCode = bankService.getBankCode(bankName);
+            log.info("Bank code for {} is {}", bankName, bankCode);
+            request.setBankCode(bankCode);
+            try {
+              AccountInfo accountInfo = payStackService.validateAccount(request.getDestinationAccount(), bankCode);
+              request.setDestinationAccountName(accountInfo.getAccountName());
+              session.sendMessage(new TextMessage("Destination Account Name: " + accountInfo.getAccountName() + "\nPlease enter the amount:"));
               transactionSteps.put(sessionId, 5);
-            } else if (request.getTransferType() == TransferType.OTHERS) {
-              request.setDestinationAccount(payload);
-              session.sendMessage(new TextMessage("Please enter the amount:"));
-              transactionSteps.put(sessionId, 5);
+            } catch (Exception e) {
+              session.sendMessage(new TextMessage("Account validation failed. Please try again."));
             }
           } else {
-            request.setPin(payload);
-            TransactionsResponse transactionResponse = transactionService.performTransaction(request);
-            sendTransactionResponse(session, transactionResponse);
-            // Clean up session data after successful transaction
-            transactionRequests.remove(sessionId);
-            transactionSteps.remove(sessionId);
+            session.sendMessage(new TextMessage("Invalid bank name. Please enter a valid bank name:"));
           }
           break;
         case 5:
           request.setAmount(new BigDecimal(payload));
-          session.sendMessage(new TextMessage("Please enter your PIN:"));
+          session.sendMessage(new TextMessage("Please enter your HelloCash PIN:"));
           transactionSteps.put(sessionId, 6);
           break;
         case 6:
           request.setPin(payload);
-          TransactionsResponse transactionResponse = transactionService.performTransaction(request);
-          sendTransactionResponse(session, transactionResponse);
+          TransactionsResponse transactionsResponse = transactionService.performTransaction(request);
+          String response = "Transfer successful!\n" +
+                  "Amount: " + transactionsResponse.getAmount() + "\n" +
+                  "Balance: " + transactionsResponse.getBalance();
+          session.sendMessage(new TextMessage(response));
           // Clean up session data after successful transaction
           transactionRequests.remove(sessionId);
           transactionSteps.remove(sessionId);
           break;
         default:
-          session.sendMessage(new TextMessage("Invalid transaction step. Please start over by selecting an option."));
+          session.sendMessage(new TextMessage("Invalid transfer step. Please start over by selecting an option."));
           transactionRequests.remove(sessionId);
           transactionSteps.remove(sessionId);
       }
     } catch (Exception e) {
-      log.error("Error processing transaction step: {}", e.getMessage());
+      log.error("Error processing transfer step: {}", e.getMessage());
+      session.sendMessage(new TextMessage("Error processing transfer. Please try again."));
+    }
+  }
+
+
+  private void processBuyAirtimeSteps(WebSocketSession session, String payload, String sessionId) throws IOException {
+    TransactionRequest request = transactionRequests.get(sessionId);
+    int step = transactionSteps.getOrDefault(sessionId, 1);
+
+    try {
+      switch (step) {
+        case 1:
+          request.setVirtualAccountNumber(payload);
+          session.sendMessage(new TextMessage("Please enter the amount of airtime to buy:"));
+          transactionSteps.put(sessionId, 2);
+          break;
+        case 2:
+          request.setAmount(new BigDecimal(payload));
+          session.sendMessage(new TextMessage("Please enter your PIN:"));
+          transactionSteps.put(sessionId, 3);
+          break;
+        case 3:
+          request.setPin(payload);
+          TransactionsResponse transactionResponse = transactionService.performTransaction(request);
+          sendTransactionResponse(session, transactionResponse);
+          transactionRequests.remove(sessionId);
+          transactionSteps.remove(sessionId);
+          break;
+        default:
+          session.sendMessage(new TextMessage("Invalid airtime step. Please start over by selecting an option."));
+          transactionRequests.remove(sessionId);
+          transactionSteps.remove(sessionId);
+      }
+    } catch (Exception e) {
+      log.error("Error processing airtime step: {}", e.getMessage());
       sendErrorMessage(session, e);
     }
   }
 
+  private void processBuyDataSteps(WebSocketSession session, String payload, String sessionId) throws IOException {
+    TransactionRequest request = transactionRequests.get(sessionId);
+    int step = transactionSteps.getOrDefault(sessionId, 1);
+
+    try {
+      switch (step) {
+        case 1:
+          request.setVirtualAccountNumber(payload);
+          session.sendMessage(new TextMessage("Please enter the amount of data to buy:"));
+          transactionSteps.put(sessionId, 2);
+          break;
+        case 2:
+          request.setAmount(new BigDecimal(payload));
+          session.sendMessage(new TextMessage("Please enter your PIN:"));
+          transactionSteps.put(sessionId, 3);
+          break;
+        case 3:
+          request.setPin(payload);
+          TransactionsResponse transactionResponse = transactionService.performTransaction(request);
+          sendTransactionResponse(session, transactionResponse);
+          transactionRequests.remove(sessionId);
+          transactionSteps.remove(sessionId);
+          break;
+        default:
+          session.sendMessage(new TextMessage("Invalid data step. Please start over by selecting an option."));
+          transactionRequests.remove(sessionId);
+          transactionSteps.remove(sessionId);
+      }
+    } catch (Exception e) {
+      log.error("Error processing data step: {}", e.getMessage());
+      sendErrorMessage(session, e);
+    }
+  }
 
   private void sendTransactionResponse(WebSocketSession session, TransactionsResponse transactionResponse) throws IOException {
     String responseMessage = "Transaction Response:\n" +
@@ -252,6 +338,7 @@ public class WebSocketHandler extends TextWebSocketHandler {
 
     session.sendMessage(new TextMessage(responseMessage));
   }
+
   private void sendErrorMessage(WebSocketSession session, Exception e) throws IOException {
     String errorMessage;
     int statusCode;
@@ -262,7 +349,7 @@ public class WebSocketHandler extends TextWebSocketHandler {
     } else {
       errorMessage = "An unexpected error occurred. Please try again later.";
       statusCode = HttpStatus.INTERNAL_SERVER_ERROR.value();
-      log.error("Unexpected error occurred: {}", e.getMessage(), e); // Log the exception for internal debugging
+      log.error("Unexpected error occurred: {}", e.getMessage(), e);
     }
 
     ErrorObject errorObject = new ErrorObject(statusCode, errorMessage);

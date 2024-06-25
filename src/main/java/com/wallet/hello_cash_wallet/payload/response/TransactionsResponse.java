@@ -15,9 +15,8 @@ import java.math.BigDecimal;
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class TransactionsResponse {
-  private String accountName;
-  private BigDecimal balance;
-  private String virtualAccountNumber;
+  private int statusCode;
   private String message;
-  private int StatusCode;
+  private BigDecimal amount;
+  private BigDecimal balance;
 }

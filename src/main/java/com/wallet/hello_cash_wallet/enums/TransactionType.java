@@ -8,9 +8,7 @@ public enum TransactionType {
   WITHDRAW("Withdraw"),
   TRANSFER("Transfer"),
   BUY_CARD("Buy Card"),
-  BUY_DATA("Buy Data"),
-  CREDIT("Credit"),
-  DEBIT("Debit");
+  BUY_DATA("Buy Data");
 
   private final String label;
 

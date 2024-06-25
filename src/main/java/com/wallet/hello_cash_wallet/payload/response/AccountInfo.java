@@ -16,6 +16,11 @@ import java.math.BigDecimal;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class AccountInfo {
   private String accountName;
-  private BigDecimal balance;
-  private String virtualAccountNumber;
+  private String accountNumber;
+  private String bankCode;
+
+//  public AccountInfo(String accountName, String accountNumber) {
+//    this.accountName = accountName;
+//    this.accountNumber = accountNumber;
+//  }
 }

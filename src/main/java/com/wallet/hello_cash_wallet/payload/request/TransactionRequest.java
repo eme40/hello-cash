@@ -19,8 +19,11 @@ public class TransactionRequest {
   private Long id;
   private String virtualAccountNumber;
   private String destinationAccount;
+  private String destinationAccountName;
   private BigDecimal amount;
   private TransactionType transactionType;
   private String pin;
   private TransferType transferType;
+  private String bankCode;
+  private String phoneNumber;
 }
