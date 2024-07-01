@@ -5,4 +5,5 @@ import com.wallet.hello_cash_wallet.payload.response.TransactionsResponse;
 
 public interface TransactionService {
   TransactionsResponse performTransaction(TransactionRequest request) ;
+  TransactionsResponse handleTransfer (TransactionRequest request);
 }

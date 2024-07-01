@@ -3,17 +3,13 @@ package com.wallet.hello_cash_wallet.service.impl;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wallet.hello_cash_wallet.payload.request.Bank;
-import com.wallet.hello_cash_wallet.payload.response.AccountData;
 import com.wallet.hello_cash_wallet.payload.response.AccountInfo;
-import com.wallet.hello_cash_wallet.payload.response.AccountValidationResponse;
 import com.wallet.hello_cash_wallet.payload.response.BankResponse;
 import com.wallet.hello_cash_wallet.service.PayStackService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 

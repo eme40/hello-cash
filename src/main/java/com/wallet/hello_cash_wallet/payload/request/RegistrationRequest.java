@@ -23,4 +23,6 @@ public class RegistrationRequest {
   @Size(min = 4, max = 4, message = "BVN must be 10 digits")
   @NotBlank(message = "Required Field")
   private String pin;
+  private String phoneNumber;
+
 }

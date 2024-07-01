@@ -5,4 +5,5 @@ import com.wallet.hello_cash_wallet.payload.response.RegistrationResponse;
 
 public interface UserEntityService {
   RegistrationResponse createUser(RegistrationRequest request);
+  String getAccountNumberByPhoneNumber(String phoneNumber);
 }

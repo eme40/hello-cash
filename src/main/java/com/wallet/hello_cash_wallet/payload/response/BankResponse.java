@@ -11,5 +11,4 @@ import java.util.List;
 public class BankResponse {
   private boolean status;
   private List<Bank> data;
-
 }

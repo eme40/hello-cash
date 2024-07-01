@@ -30,6 +30,8 @@ public class UserEntity extends BaseClass{
   private String address;
   private Gender gender;
   private Role role;
+  private String phoneNumber;
+
 
   public UserEntity() {
     this.address = "16B ";

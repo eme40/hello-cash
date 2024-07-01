@@ -14,56 +14,55 @@ import com.wallet.hello_cash_wallet.repository.UserEntityRepository;
 import com.wallet.hello_cash_wallet.repository.WalletRepository;
 import com.wallet.hello_cash_wallet.service.PayStackService;
 import com.wallet.hello_cash_wallet.service.TransactionService;
+import com.wallet.hello_cash_wallet.service.TwilioService;
 import jakarta.transaction.Transactional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 
+
 @Service
 @Slf4j
 public class TransactionServiceImpl implements TransactionService {
+
 
   private final UserEntityRepository userEntityRepository;
   private final WalletRepository walletRepository;
   private final TransactionRepository transactionRepository;
   private final PayStackService payStackService;
+  private final TwilioService twilioService;
+
 
   public TransactionServiceImpl(UserEntityRepository userEntityRepository, WalletRepository walletRepository,
-                                TransactionRepository transactionRepository, PayStackService payStackService) {
+                                TransactionRepository transactionRepository, PayStackService payStackService, TwilioService twilioService) {
     this.userEntityRepository = userEntityRepository;
     this.walletRepository = walletRepository;
     this.transactionRepository = transactionRepository;
     this.payStackService = payStackService;
+    this.twilioService = twilioService;
   }
 
-  @Override
   @Transactional
   public TransactionsResponse performTransaction(TransactionRequest request) {
     try {
-      log.info("Performing transaction: {}", request);
       Wallet wallet = walletRepository.findByVirtualAccountNumber(request.getVirtualAccountNumber());
       if (wallet == null) {
-        log.error("Account not found for virtual account number: {}", request.getVirtualAccountNumber());
         throw new AccountNotFoundException("Account not found");
       }
-
-      if (!wallet.getUser().getPin().equals(request.getPin())) {
-        log.error("Invalid PIN for user with virtual account number: {}", request.getVirtualAccountNumber());
+      if (!request.getPin().equals(wallet.getUser().getPin())) {
         return TransactionsResponse.builder()
                 .message("Invalid Pin")
                 .statusCode(400)
                 .build();
       }
-
-      // Process transaction based on action
+      TransactionsResponse response;
       switch (request.getTransactionType()) {
         case BUY_CARD:
-          // return handleCredit(wallet, request.getAmount());
         case BUY_DATA:
-          // return handleDebit(wallet, request.getAmount());
         case TRANSFER:
-          return handleTransfer(request);
+          response = handleTransfer(request);
+          break;
         default:
           log.error("Invalid transaction type: {}", request.getTransactionType());
           return TransactionsResponse.builder()
@@ -71,15 +70,20 @@ public class TransactionServiceImpl implements TransactionService {
                   .message("Invalid action")
                   .build();
       }
+
+      String smsMessage = "Transaction successful!\n" +
+              "Amount: " + response.getAmount() + "\n" +
+              "Balance: " + response.getBalance();
+      twilioService.sendSms(wallet.getUser().getPhoneNumber(), smsMessage);
+      return response;
     } catch (Exception e) {
       log.error("Error performing transaction: {}", e.getMessage(), e);
       throw new RuntimeException("Transaction failed", e);
     }
   }
 
-
   @Transactional
-  public TransactionsResponse handleTransfer(TransactionRequest request) {
+  public TransactionsResponse handleTransfer (TransactionRequest request){
     try {
       Wallet sourceWallet = walletRepository.findByVirtualAccountNumber(request.getVirtualAccountNumber());
       if (sourceWallet == null) {
@@ -109,7 +113,7 @@ public class TransactionServiceImpl implements TransactionService {
         // Deduct from source account
         sourceWallet.setBalance(sourceWallet.getBalance().subtract(request.getAmount()));
         walletRepository.save(sourceWallet);
-        log.info("Source Wallet after deduction: {}", sourceWallet.getBalance());
+        //        log.info("Source Wallet after deduction: {}", sourceWallet.getBalance());
         saveTransaction(sourceWallet, request.getAmount(), TransactionType.TRANSFER, TransactionStatus.SUCCESS);
 
         // Add to destination account
@@ -160,8 +164,8 @@ public class TransactionServiceImpl implements TransactionService {
         }
 
         if (request.getAmount().compareTo(sourceWallet.getBalance()) > 0) {
-          log.error("Insufficient balance for virtual account number: {}. Transfer amount: {}, Balance: {}",
-                  request.getVirtualAccountNumber(), request.getAmount(), sourceWallet.getBalance());
+//                    log.error("Insufficient balance for virtual account number: {}. Transfer amount: {}, Balance: {}",
+//                            request.getVirtualAccountNumber(), request.getAmount(), sourceWallet.getBalance());
           return TransactionsResponse.builder()
                   .statusCode(200)
                   .message("Insufficient balance")
@@ -186,13 +190,13 @@ public class TransactionServiceImpl implements TransactionService {
                 .balance(sourceWallet.getBalance())
                 .build();
       }
+
     } catch (Exception e) {
       log.error("Error handling transfer: {}", e.getMessage(), e);
       throw new RuntimeException("Transfer failed", e);
     }
   }
-
-  private void saveTransaction(Wallet wallet, BigDecimal amount, TransactionType type, TransactionStatus status) {
+  private void saveTransaction (Wallet wallet, BigDecimal amount, TransactionType type, TransactionStatus status){
     try {
       Transaction transaction = Transaction.builder()
               .transactionType(type)
@@ -208,3 +212,4 @@ public class TransactionServiceImpl implements TransactionService {
     }
   }
 }
+
